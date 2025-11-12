@@ -1,7 +1,9 @@
 [package]
-name = "tiny-ray-tracing"
+name = "toy-raytracing"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 rand = "0.9.2"
+stb_image = "0.3.0"
+rayon = "1"

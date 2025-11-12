@@ -1,19 +1,31 @@
+use std::sync::Arc;
+
 use super::hittable::HitRecord;
 use super::ray::Ray;
+use super::texture::{SolidColor, Texture};
 use crate::utils::color::Color;
-use crate::utils::vec3::Vec3;
+use crate::utils::vec3::{Point3, Vec3};
 
 pub trait Material: Send + Sync {
-    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Color, Ray)>;
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Color, Ray)> {
+        None
+    }
+
+    fn emitted(&self, _u: f64, _v: f64, _p: &Point3) -> Color {
+        Color::default()
+    }
 }
 
 pub struct Lambertian {
-    pub albedo: Color,
+    pub tex: Arc<dyn Texture>,
 }
 
 impl Lambertian {
-    pub fn new(albedo: Color) -> Self {
-        Self { albedo }
+    pub fn new(tex: Arc<dyn Texture>) -> Self {
+        Self { tex }
+    }
+    pub fn new_color(c: Color) -> Self {
+        Self::new(Arc::new(SolidColor::new(c)))
     }
 }
 
@@ -24,7 +36,8 @@ impl Material for Lambertian {
             scatter_direction = rec.normal;
         }
         let scattered = Ray::new(rec.p, scatter_direction, r_in.ts);
-        Some((self.albedo, scattered))
+        let attenuation = self.tex.value(rec.uv.0, rec.uv.1, &rec.p);
+        Some((attenuation, scattered))
     }
 }
 
@@ -92,6 +105,51 @@ impl Material for Dielectric {
                 Vec3::refract(&unit_direction, &rec.normal, ri)
             };
         let scattered = Ray::new(rec.p, direction, r_in.ts);
+        Some((attenuation, scattered))
+    }
+}
+
+pub struct DiffuseLight {
+    pub tex: Arc<dyn Texture>,
+}
+
+impl DiffuseLight {
+    pub fn new(tex: Arc<dyn Texture>) -> Self {
+        Self { tex }
+    }
+
+    pub fn new_color(c: Color) -> Self {
+        Self::new(Arc::new(SolidColor::new(c)))
+    }
+}
+
+impl Material for DiffuseLight {
+    fn scatter(&self, _r_in: &Ray, _rec: &HitRecord) -> Option<(Color, Ray)> {
+        None
+    }
+
+    fn emitted(&self, u: f64, v: f64, p: &Point3) -> Color {
+        self.tex.value(u, v, p)
+    }
+}
+
+pub struct Isotropic {
+    pub tex: Arc<dyn Texture>,
+}
+
+impl Isotropic {
+    pub fn new(tex: Arc<dyn Texture>) -> Self {
+        Self { tex }
+    }
+    pub fn new_color(c: Color) -> Self {
+        Self::new(Arc::new(SolidColor::new(c)))
+    }
+}
+
+impl Material for Isotropic {
+    fn scatter(&self, r_in: &Ray, rec: &HitRecord) -> Option<(Color, Ray)> {
+        let scattered = Ray::new(rec.p, Vec3::random_unit_vector(), r_in.ts);
+        let attenuation = self.tex.value(rec.uv.0, rec.uv.1, &rec.p);
         Some((attenuation, scattered))
     }
 }

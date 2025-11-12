@@ -1,6 +1,8 @@
+use std::ops::Add;
+
 use crate::core::ray::Ray;
 use crate::utils::interval::Interval;
-use crate::utils::vec3::Point3;
+use crate::utils::vec3::{Point3, Vec3};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Aabb {
@@ -21,7 +23,9 @@ impl Default for Aabb {
 
 impl Aabb {
     pub fn new(x: Interval, y: Interval, z: Interval) -> Self {
-        Self { x, y, z }
+        let mut aabb = Self { x, y, z };
+        aabb.pad_to_minimum();
+        aabb
     }
 
     pub fn from_points(a: Point3, b: Point3) -> Self {
@@ -29,11 +33,13 @@ impl Aabb {
         let (ymin, ymax) = (a[1].min(b[1]), a[1].max(b[1]));
         let (zmin, zmax) = (a[2].min(b[2]), a[2].max(b[2]));
 
-        Self {
+        let mut aabb = Self {
             x: Interval::new(xmin, xmax),
             y: Interval::new(ymin, ymax),
             z: Interval::new(zmin, zmax),
-        }
+        };
+        aabb.pad_to_minimum();
+        aabb
     }
 
     pub fn from_iter<I>(iter: I) -> Self
@@ -115,6 +121,39 @@ impl Aabb {
             1
         } else {
             2
+        }
+    }
+
+    pub fn pad_to_minimum(&mut self) {
+        let delta = 0.0001;
+        for axis in [&mut self.x, &mut self.y, &mut self.z] {
+            if axis.size() < delta {
+                axis.expand(delta);
+            }
+        }
+    }
+}
+
+impl<'a> Add<&'a Vec3> for Aabb {
+    type Output = Self;
+
+    fn add(self, other: &'a Vec3) -> Self {
+        Self {
+            x: self.x + &other.x(),
+            y: self.y + &other.y(),
+            z: self.z + &other.z(),
+        }
+    }
+}
+
+impl<'a> Add<&'a Aabb> for Vec3 {
+    type Output = Aabb;
+
+    fn add(self, other: &'a Aabb) -> Aabb {
+        Aabb {
+            x: other.x + &self.x(),
+            y: other.y + &self.y(),
+            z: other.z + &self.z(),
         }
     }
 }

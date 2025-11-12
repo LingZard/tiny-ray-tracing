@@ -5,12 +5,14 @@ use super::ray::Ray;
 use crate::utils::color::{Color, write_color};
 use crate::utils::interval::Interval;
 use crate::utils::vec3::{Point3, Vec3};
+use rayon::prelude::*;
 
 pub struct Camera {
     pub aspect_ratio: f64,      // width / height
     pub image_width: u32,       // pixel width
     pub samples_per_pixel: u32, // blue-noise samples per pixel
     pub max_depth: u32,
+    pub background: Color,
     pub vfov: f64,
     pub lookfrom: Point3,
     pub lookat: Point3,
@@ -40,6 +42,7 @@ impl Default for Camera {
             samples_per_pixel: 10,
             max_depth: 10,
             vfov: 90.0,
+            background: Color::default(),
             lookfrom: Point3::default(),
             lookat: Point3::new(0.0, 0.0, -1.0),
             vup: Vec3::new(0.0, 1.0, 0.0),
@@ -73,6 +76,7 @@ impl Camera {
         vup: Vec3,
         defocus_angle: f64,
         focus_dist: f64,
+        background: Color,
     ) -> Self {
         Self {
             aspect_ratio,
@@ -85,6 +89,7 @@ impl Camera {
             vup,
             defocus_angle,
             focus_dist,
+            background,
             ..Default::default()
         }
     }
@@ -94,16 +99,26 @@ impl Camera {
 
         writeln!(out, "P3\n{} {}\n255", self.image_width, self.image_height)?;
 
-        for j in 0..self.image_height {
-            for i in 0..self.image_width {
-                let mut pixel_color = Color::default();
-                for s in 0..self.samples_per_pixel {
-                    let r = self.get_ray(i, j, s);
-                    pixel_color += &Self::ray_color(&r, self.max_depth, world);
+        let rows: Vec<Vec<u8>> = (0..self.image_height as usize)
+            .into_par_iter()
+            .map(|jj| {
+                let j = jj as u32;
+                let mut row_bytes = Vec::with_capacity((self.image_width as usize) * 12);
+                for i in 0..self.image_width {
+                    let mut pixel_color = Color::default();
+                    for s in 0..self.samples_per_pixel {
+                        let r = self.get_ray(i, j, s);
+                        pixel_color += &self.ray_color(&r, self.max_depth, world);
+                    }
+                    let scaled = self.pixel_samples_scale * pixel_color;
+                    let _ = write_color(&mut row_bytes, &scaled);
                 }
-                let scaled = self.pixel_samples_scale * pixel_color;
-                write_color(&mut out, &scaled)?;
-            }
+                row_bytes
+            })
+            .collect();
+
+        for row in rows {
+            out.write_all(&row)?;
         }
 
         Ok(())
@@ -149,23 +164,22 @@ impl Camera {
         self.defocus_disk_v = defocus_radius * self.v;
     }
 
-    fn ray_color(r: &Ray, depth: u32, world: &dyn Hittable) -> Color {
+    fn ray_color(&self, r: &Ray, depth: u32, world: &dyn Hittable) -> Color {
         if depth <= 0 {
             return Color::default();
         }
 
         if let Some(rec) = world.hit(r, &Interval::new(0.001, f64::INFINITY)) {
+            let emitted = rec.material.emitted(rec.uv.0, rec.uv.1, &rec.p);
             match rec.material.scatter(r, &rec) {
                 Some((attenuation, scattered)) => {
-                    return attenuation * Self::ray_color(&scattered, depth - 1, world);
+                    return emitted + attenuation * self.ray_color(&scattered, depth - 1, world);
                 }
-                None => return Color::default(),
+                None => return emitted,
             }
         }
 
-        let unit_direction = r.dir.unit_vector();
-        let a = 0.5 * (unit_direction.y() + 1.0);
-        (1.0 - a) * Color::new(1.0, 1.0, 1.0) + a * Color::new(0.5, 0.7, 1.0)
+        return self.background;
     }
 
     fn get_ray(&self, i: u32, j: u32, sample_idx: u32) -> Ray {

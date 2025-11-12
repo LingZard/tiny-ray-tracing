@@ -41,6 +41,15 @@ impl Sphere {
             aabb: box1.merge(&box2),
         }
     }
+
+    fn get_sphere_uv(p: &Point3) -> (f64, f64) {
+        let theta = f64::acos(-p.y());
+        let phi = (-p.z()).atan2(p.x()) + std::f64::consts::PI;
+        (
+            phi / (2.0 * std::f64::consts::PI),
+            theta / std::f64::consts::PI,
+        )
+    }
 }
 
 impl Hittable for Sphere {
@@ -69,7 +78,12 @@ impl Hittable for Sphere {
         let t = root;
         let p = r.at(t);
         let outward_normal = (p - current_center) / self.radius;
-        let mut rec = HitRecord::new(p, t, self.material.clone());
+        let mut rec = HitRecord::new(
+            p,
+            t,
+            Self::get_sphere_uv(&outward_normal),
+            self.material.clone(),
+        );
         rec.set_face_normal(r, &outward_normal);
         Some(rec)
     }
